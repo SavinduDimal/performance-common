@@ -617,6 +617,11 @@ function delete_stack() {
 declare -a stack_ids
 
 function exit_handler() {
+    if [[ "$provision_only" == true ]]; then
+        echo "Provision-only mode enabled; preserving all stacks in exit handler."
+        printf "Script execution time: %s\n" "$(format_time $(measure_time $script_start_time))"
+        return
+    fi
     #Delete stack if it's already running
     for stack_id in ${stack_ids[@]}; do
         if aws cloudformation describe-stacks --stack-name $stack_id >/dev/null 2>&1; then
