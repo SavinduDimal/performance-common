@@ -57,6 +57,7 @@ default_number_of_stacks=1
 number_of_stacks=$default_number_of_stacks
 default_parallel_parameter_option="u"
 parallel_parameter_option="$default_parallel_parameter_option"
+provision_only=false
 ALLOWED_OPTIONS="ubsm"
 
 function usage() {
@@ -70,7 +71,7 @@ function usage() {
     if function_exists usageCommand; then
         echo "   $(usageCommand)"
     fi
-    echo "   [-t <number_of_stacks>] [-p <parallel_parameter_option>] [-w <minimum_stack_creation_wait_time>]"
+    echo "   [-t <number_of_stacks>] [-p <parallel_parameter_option>] [-w <minimum_stack_creation_wait_time>] [-P]"
     echo "   [-h] -- [run_performance_tests_options]"
     echo ""
     echo "-u: Email of the user running this script."
@@ -95,11 +96,13 @@ function usage() {
     echo "    Default: $default_parallel_parameter_option. Allowed option characters: $ALLOWED_OPTIONS."
     echo "-w: The minimum time to wait in minutes before polling for cloudformation stack's CREATE_COMPLETE status."
     echo "    Default: $default_minimum_stack_creation_wait_time."
+    echo "-P: Provision the CloudFormation stack(s) and stop after CREATE_COMPLETE."
+    echo "    Skips remote JMeter execution and preserves the created stack(s) for manual follow-up work."
     echo "-h: Display this help and exit."
     echo ""
 }
 
-while getopts "u:f:d:k:n:j:o:g:s:b:r:J:S:N:t:p:w:h" opts; do
+while getopts "u:f:d:k:n:j:o:g:s:b:r:J:S:N:t:p:w:Ph" opts; do
     case $opts in
     u)
         user_email=${OPTARG}
@@ -151,6 +154,9 @@ while getopts "u:f:d:k:n:j:o:g:s:b:r:J:S:N:t:p:w:h" opts; do
         ;;
     w)
         minimum_stack_creation_wait_time=${OPTARG}
+        ;;
+    P)
+        provision_only=true
         ;;
     h)
         usage
@@ -308,6 +314,11 @@ if ! [[ $ALLOWED_OPTIONS == *"$parallel_parameter_option"* ]]; then
     exit 1
 fi
 
+if [[ "$provision_only" != true ]] && [[ ${#run_performance_tests_options[@]} -eq 0 ]]; then
+    echo "Please provide test options after --, or use -P to provision the environment without running tests."
+    exit 1
+fi
+
 if function_exists validate; then
     validate
 fi
@@ -353,6 +364,7 @@ test_parameters[number_of_stacks]="$number_of_stacks"
 test_parameters[jmeter_client_ec2_instance_type]="$jmeter_client_ec2_instance_type"
 test_parameters[jmeter_server_ec2_instance_type]="$jmeter_server_ec2_instance_type"
 test_parameters[netty_ec2_instance_type]="$netty_ec2_instance_type"
+test_parameters[provision_only]="$provision_only"
 
 if function_exists get_test_metadata; then
     while IFS='=' read -r key value; do
@@ -370,12 +382,16 @@ jq -n "${test_parameters_args[@]}" "$test_parameters_json" >$results_dir/cf-test
 
 estimate_command="$script_dir/../jmeter/${run_performance_tests_script_name} -t ${run_performance_tests_options[@]}"
 echo "Estimating total time for performance tests: $estimate_command"
-# Estimating this script will also validate the options. It's important to validate options before creating the stack.
-$estimate_command
+if [[ "$provision_only" == true ]]; then
+    echo "Provision-only mode enabled; skipping remote test estimation and summary metadata generation."
+else
+    # Estimating this script will also validate the options. It's important to validate options before creating the stack.
+    $estimate_command
 
-# Save test metadata
-mv test-metadata.json $results_dir
-mv test-duration.json $results_dir
+    # Save test metadata
+    mv test-metadata.json $results_dir
+    mv test-duration.json $results_dir
+fi
 
 # Region Display Names
 # The AWS Pricing API uses display names to filter location.
@@ -436,7 +452,11 @@ fi
 
 declare -a performance_test_options
 
-if [[ $number_of_stacks -gt 1 ]]; then
+if [[ "$provision_only" == true ]]; then
+    for ((i = 0; i < $number_of_stacks; i++)); do
+        performance_test_options+=("")
+    done
+elif [[ $number_of_stacks -gt 1 ]]; then
     # Read options given to the performance test script. Refer jmeter/perf-test-common.sh
     declare -a options
     # Flag to check whether next parameter is an argument to $parallel_parameter_option
@@ -713,6 +733,11 @@ function save_logs_and_delete_stack() {
     # Download files
     download_files ${stack_id} ${stack_name} ${stack_results_dir}
 
+    if [[ "$provision_only" == true ]]; then
+        echo "Provision-only mode enabled; preserving stack: $stack_id"
+        return
+    fi
+
     if [ "$SUSPEND" = true ]; then
         echo "SUSPEND is true, holding the deletion of stack: $stack_id"
         if ! sleep infinity; then
@@ -740,6 +765,38 @@ function wait_and_download_files() {
     if [[ "$stack_status" != "CREATE_COMPLETE" ]]; then
         download_files ${stack_id} ${stack_name} ${stack_results_dir}
     fi
+}
+
+function write_provisioned_stack_details() {
+    local stack_id="$1"
+    local stack_name="$2"
+    local stack_results_dir="$3"
+    local stack_resources_json="$stack_results_dir/stack-resources.json"
+    local hosts_file="$stack_results_dir/provisioned-hosts.env"
+    local vpc_id="$(jq -r '.StackResources[] | select(.LogicalResourceId=="VPC") | .PhysicalResourceId' "$stack_resources_json")"
+    local stack_instances_json="$stack_results_dir/stack-instances.json"
+
+    aws ec2 describe-instances --filters "Name=vpc-id,Values=${vpc_id}" --query "Reservations[*].Instances[*]" \
+        --no-paginate --output json >"$stack_instances_json"
+
+    local jmeter_client_ip="$(aws cloudformation describe-stacks --stack-name "$stack_id" \
+        --query 'Stacks[0].Outputs[?OutputKey==`JMeterClientPublicIP`].OutputValue' --output text)"
+    local apim_private_ip="$(jq -r '.[][] | select(any(.Tags[]?; .Key=="Name" and (.Value | endswith(":wso2am")))) | .PrivateIpAddress' "$stack_instances_json")"
+    local backend_private_ip="$(jq -r '.[][] | select(any(.Tags[]?; .Key=="Name" and (.Value | endswith(":backend")))) | .PrivateIpAddress' "$stack_instances_json")"
+    local jmeter_private_ip="$(jq -r '.[][] | select(any(.Tags[]?; .Key=="Name" and (.Value | endswith(":jmeter-client")))) | .PrivateIpAddress' "$stack_instances_json")"
+
+    cat >"$hosts_file" <<EOF
+STACK_NAME="$stack_name"
+STACK_ID="$stack_id"
+JMETER_CLIENT_PUBLIC_IP="$jmeter_client_ip"
+JMETER_CLIENT_PRIVATE_IP="$jmeter_private_ip"
+APIM_PRIVATE_IP="$apim_private_ip"
+BACKEND_PRIVATE_IP="$backend_private_ip"
+SSH_KEY_FILE="$key_file"
+EOF
+
+    echo "Provisioned stack details saved to $hosts_file"
+    cat "$hosts_file"
 }
 
 function run_perf_tests_in_stack() {
@@ -778,6 +835,12 @@ function run_perf_tests_in_stack() {
     echo "Getting JMeter Client Public IP..."
     jmeter_client_ip="$(aws cloudformation describe-stacks --stack-name $stack_id --query 'Stacks[0].Outputs[?OutputKey==`JMeterClientPublicIP`].OutputValue' --output text)"
     echo "JMeter Client Public IP: $jmeter_client_ip"
+
+    if [[ "$provision_only" == true ]]; then
+        write_provisioned_stack_details "$stack_id" "$stack_name" "$stack_results_dir"
+        echo "Provision-only mode enabled; skipping remote performance test execution for stack: $stack_name"
+        return
+    fi
 
     ssh_command_prefix="ssh -i $key_file -o "StrictHostKeyChecking=no" -T ubuntu@$jmeter_client_ip"
     # Run performance tests
@@ -818,6 +881,11 @@ jobs
 echo "Waiting till all performance test jobs are completed..."
 # Wait till parallel tests complete
 wait
+
+if [[ "$provision_only" == true ]]; then
+    echo "Provision-only mode completed. Stack details are available under $results_dir/results-*/provisioned-hosts.env"
+    exit 0
+fi
 
 declare -a system_information_files
 
