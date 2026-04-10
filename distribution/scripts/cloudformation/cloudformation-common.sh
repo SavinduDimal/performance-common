@@ -896,6 +896,19 @@ echo "Waiting till all performance test jobs are completed..."
 wait
 
 if [[ "$provision_only" == true ]]; then
+    cd $results_dir
+    if [[ ! -f summary.csv ]]; then
+        echo "Scenario Name,Provision Status" >summary.csv
+        echo "\"Provision Only\",\"Stacks provisioned successfully\"" >>summary.csv
+    fi
+    if [[ ! -f summary.md ]]; then
+        cat <<'EOF' >summary.md
+# Provision-only Run
+
+The stack provisioning completed successfully in provision-only mode.
+No performance test execution or summary statistics were generated.
+EOF
+    fi
     echo "Provision-only mode completed. Stack details are available under $results_dir/results-*/provisioned-hosts.env"
     exit 0
 fi
