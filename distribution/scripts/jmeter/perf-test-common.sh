@@ -110,6 +110,7 @@ jmeter_servers=$default_jmeter_servers
 declare -a jmeter_ssh_hosts
 
 payload_type=ARRAY
+declare -a payload_generator_args
 # Estimate flag
 estimate=false
 # Estimated processing time in between tests
@@ -507,12 +508,13 @@ function initialize_test() {
         if [[ $jmeter_servers -gt 1 ]]; then
             for jmeter_ssh_host in ${jmeter_ssh_hosts[@]}; do
                 echo "Generating Payloads in $jmeter_ssh_host"
-                ssh $jmeter_ssh_host "./payloads/generate-payloads.sh" -p $payload_type ${payload_sizes[@]}
+                ssh $jmeter_ssh_host "./payloads/generate-payloads.sh" -p $payload_type \
+                    ${payload_generator_args[@]} ${payload_sizes[@]}
             done
         else
             pushd $HOME
             # Payloads should be created in the $HOME directory
-            if ! ./payloads/generate-payloads.sh -p $payload_type ${payload_sizes[@]}; then
+            if ! ./payloads/generate-payloads.sh -p $payload_type ${payload_generator_args[@]} ${payload_sizes[@]}; then
                 echo "WARNING: Failed to generate payloads!"
             fi
             popd

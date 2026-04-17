@@ -38,11 +38,17 @@ public class Http2OrHttpHandler extends ApplicationProtocolNegotiationHandler {
     private static final int MAX_CONTENT_LENGTH = 1024 * 100;
     private final long sleepTime;
     private final boolean h2ContentAggregate;
+    private final String fixedResponseContent;
 
     Http2OrHttpHandler(long sleepTime, boolean h2ContentAggregate) {
+        this(sleepTime, h2ContentAggregate, null);
+    }
+
+    Http2OrHttpHandler(long sleepTime, boolean h2ContentAggregate, String fixedResponseContent) {
         super(ApplicationProtocolNames.HTTP_1_1);
         this.sleepTime = sleepTime;
         this.h2ContentAggregate = h2ContentAggregate;
+        this.fixedResponseContent = fixedResponseContent;
     }
 
     @Override
@@ -58,7 +64,7 @@ public class Http2OrHttpHandler extends ApplicationProtocolNegotiationHandler {
                 ctx.pipeline().addLast(new HttpToHttp2ConnectionHandlerBuilder()
                         .frameListener(listener)
                         .connection(connection).build());
-                ctx.pipeline().addLast(new EchoHttpServerHandler(sleepTime, true));
+                ctx.pipeline().addLast(new EchoHttpServerHandler(sleepTime, true, fixedResponseContent));
             } else {
                 ctx.pipeline().addLast(Http2FrameCodecBuilder.forServer().build(), new EchoHttp2ServerHandler());
             }
@@ -68,7 +74,7 @@ public class Http2OrHttpHandler extends ApplicationProtocolNegotiationHandler {
         if (ApplicationProtocolNames.HTTP_1_1.equals(protocol)) {
             ctx.pipeline().addLast(new HttpServerCodec(),
                     new HttpObjectAggregator(MAX_CONTENT_LENGTH),
-                    new EchoHttpServerHandler(sleepTime, false));
+                    new EchoHttpServerHandler(sleepTime, false, fixedResponseContent));
             return;
         }
 

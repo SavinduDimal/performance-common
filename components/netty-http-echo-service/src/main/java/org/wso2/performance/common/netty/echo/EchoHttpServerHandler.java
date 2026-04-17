@@ -15,6 +15,7 @@
  */
 package org.wso2.performance.common.netty.echo;
 
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandler.Sharable;
@@ -28,6 +29,7 @@ import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http2.HttpConversionUtil;
 
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 import static io.netty.handler.codec.http.HttpResponseStatus.OK;
@@ -44,10 +46,16 @@ public class EchoHttpServerHandler extends SimpleChannelInboundHandler<FullHttpR
 
     private long sleepTime;
     private boolean h2ContentAggregate;
+    private String fixedResponseContent;
 
     EchoHttpServerHandler(long sleepTime, boolean h2ContentAggregate) {
+        this(sleepTime, h2ContentAggregate, null);
+    }
+
+    EchoHttpServerHandler(long sleepTime, boolean h2ContentAggregate, String fixedResponseContent) {
         this.sleepTime = sleepTime;
         this.h2ContentAggregate = h2ContentAggregate;
+        this.fixedResponseContent = fixedResponseContent;
     }
 
     @Override
@@ -82,11 +90,18 @@ public class EchoHttpServerHandler extends SimpleChannelInboundHandler<FullHttpR
         }
     }
 
-    private static FullHttpResponse buildFullHttpResponse(FullHttpRequest request) {
-        FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, OK, request.content().copy());
-        String contentType = request.headers().get(HttpHeaderNames.CONTENT_TYPE);
-        if (contentType != null) {
-            response.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
+    private FullHttpResponse buildFullHttpResponse(FullHttpRequest request) {
+        FullHttpResponse response;
+        if (fixedResponseContent == null) {
+            response = new DefaultFullHttpResponse(HTTP_1_1, OK, request.content().copy());
+            String contentType = request.headers().get(HttpHeaderNames.CONTENT_TYPE);
+            if (contentType != null) {
+                response.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
+            }
+        } else {
+            response = new DefaultFullHttpResponse(HTTP_1_1, OK,
+                    Unpooled.copiedBuffer(fixedResponseContent, StandardCharsets.UTF_8));
+            response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
         }
         response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
         return response;

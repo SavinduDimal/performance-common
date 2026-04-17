@@ -20,25 +20,30 @@
 script_dir=$(dirname "$0")
 payload_type=""
 declare -a payloads
+ai_api_payload=false
 
 function usage() {
     echo ""
     echo "Usage: "
-    echo "$0 [-p <payload_type>] [-s <payload_size>]"
+    echo "$0 [-p <payload_type>] [-s <payload_size>] [-a]"
     echo ""
     echo "-p: The Payload Type."
     echo "-s: The Payload Size. You can give multiple payload sizes."
+    echo "-a: Generate AI API chat completion request payloads."
     echo "-h: Display this help and exit."
     echo ""
 }
 
-while getopts "p:s:h" opts; do
+while getopts "p:s:ah" opts; do
     case $opts in
     p)
         payload_type=${OPTARG}
         ;;
     s)
         payloads+=("${OPTARG}")
+        ;;
+    a)
+        ai_api_payload=true
         ;;
     h)
         usage
@@ -60,6 +65,12 @@ if [[ ${#payloads[@]} -eq 0 ]]; then
 fi
 
 for s in ${payloads[*]}; do
-    echo "Generating ${s}B file"
-    java -jar $script_dir/payload-generator-${performance.common.version}.jar --size $s --payload-type ${payload_type}
+    if [ "$ai_api_payload" = true ]; then
+        echo "Generating ai_${s}B.json file"
+        prompt=$(head -c "$s" /dev/zero | tr '\0' 'x')
+        printf '{"model":"mistral-small-latest","temperature":0.7,"max_tokens":300,"stream":false,"messages":[{"role":"user","content":"%s"}]}\n' "$prompt" >"ai_${s}B.json"
+    else
+        echo "Generating ${s}B file"
+        java -jar $script_dir/payload-generator-${performance.common.version}.jar --size $s --payload-type ${payload_type}
+    fi
 done
