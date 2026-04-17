@@ -83,7 +83,7 @@ nohup java -Xms${heap_size} -Xmx${heap_size} -XX:+PrintGC -XX:+PrintGCDetails -X
 
 if [ "$wait_listen" = true ]; then
     # Find the port:
-    port=$(echo "$netty_service_flags" | sed -nE "s/--port[[:blank:]]([[:digit:]]+)/\1/p")
+    port=$(echo "$netty_service_flags" | sed -nE "s/.*--port[[:blank:]]+([[:digit:]]+).*/\1/p")
     if [[ -z $port ]]; then
         # Default port
         port=8688
@@ -91,10 +91,15 @@ if [ "$wait_listen" = true ]; then
     echo "Waiting till the port $port starts to listen."
     n=0
     until [ $n -ge 60 ]; do
-        nc -zv localhost $port && break
+        nc -zv localhost $port && listened=true && break
         n=$(($n + 1))
         sleep 1
     done
+    if [[ "$listened" != true ]]; then
+        echo "Netty did not start listening on port $port."
+        tail -50 netty.out
+        exit 1
+    fi
 fi
 
 sleep 1
