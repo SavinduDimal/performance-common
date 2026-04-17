@@ -110,6 +110,7 @@ jmeter_servers=$default_jmeter_servers
 declare -a jmeter_ssh_hosts
 
 payload_type=ARRAY
+payload_generator_args=${PAYLOAD_GENERATOR_ARGS:-}
 # Estimate flag
 estimate=false
 # Estimated processing time in between tests
@@ -413,6 +414,42 @@ function print_durations() {
     printf "Script execution time: %s\n" "$(format_time $(measure_time $test_start_time))"
 }
 
+function print_jmeter_response_code_summary() {
+    local jtl_file="$1"
+    if [[ ! -f $jtl_file ]]; then
+        return
+    fi
+
+    echo "JMeter response code distribution for ${jtl_file}:"
+    awk -F, '
+        NR > 1 {
+            key = $4 " " $5 " success=" $8
+            counts[key]++
+        }
+        END {
+            for (key in counts) {
+                printf "%8d  %s\n", counts[key], key
+            }
+        }
+    ' "$jtl_file" | sort -nr
+
+    echo "First failed JMeter samples in ${jtl_file}:"
+    awk -F, '
+        NR > 1 && $8 != "true" {
+            printf "timeStamp=%s elapsed=%s responseCode=%s responseMessage=%s failureMessage=%s URL=%s\n", $1, $2, $4, $5, $9, $14
+            failures++
+        }
+        failures >= 10 {
+            exit
+        }
+        END {
+            if (failures == 0) {
+                print "No failed samples found."
+            }
+        }
+    ' "$jtl_file"
+}
+
 function initialize_test() {
     # Filter scenarios
     if [[ ${#include_scenario_names[@]} -gt 0 ]] || [[ ${#exclude_scenario_names[@]} -gt 0 ]]; then
@@ -507,12 +544,13 @@ function initialize_test() {
         if [[ $jmeter_servers -gt 1 ]]; then
             for jmeter_ssh_host in ${jmeter_ssh_hosts[@]}; do
                 echo "Generating Payloads in $jmeter_ssh_host"
-                ssh $jmeter_ssh_host "./payloads/generate-payloads.sh" -p $payload_type ${payload_sizes[@]}
+                ssh $jmeter_ssh_host "./payloads/generate-payloads.sh" -p $payload_type \
+                    ${payload_generator_args} ${payload_sizes[@]}
             done
         else
             pushd $HOME
             # Payloads should be created in the $HOME directory
-            if ! ./payloads/generate-payloads.sh -p $payload_type ${payload_sizes[@]}; then
+            if ! ./payloads/generate-payloads.sh -p $payload_type ${payload_generator_args} ${payload_sizes[@]}; then
                 echo "WARNING: Failed to generate payloads!"
             fi
             popd
@@ -628,6 +666,7 @@ function test_scenarios() {
                         if ! wait $jmeter_pid; then
                             echo "WARNING: JMeter execution failed."
                         fi
+                        print_jmeter_response_code_summary "${report_location}/results.jtl"
                         # End timestamp
                         test_end_timestamp="$(date +%s)"
                         echo "End timestamp: $test_end_timestamp"

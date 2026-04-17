@@ -50,6 +50,7 @@ public class Http2ServerInitializer extends ChannelInitializer<SocketChannel> {
     private final int maxHttpContentLength;
     private final long sleepTime;
     private final boolean h2ContentAggregate;
+    private final String fixedResponseContent;
 
     private static final UpgradeCodecFactory upgradeCodecFactory = protocol -> {
         if (AsciiString.contentEquals(Http2CodecUtil.HTTP_UPGRADE_PROTOCOL_NAME, protocol)) {
@@ -61,11 +62,15 @@ public class Http2ServerInitializer extends ChannelInitializer<SocketChannel> {
     };
 
     Http2ServerInitializer(SslContext sslCtx, long sleepTime, boolean h2ContentAggregate) {
-        this(sslCtx, sleepTime, h2ContentAggregate, 16 * 1024);
+        this(sslCtx, sleepTime, h2ContentAggregate, 16 * 1024, null);
+    }
+
+    Http2ServerInitializer(SslContext sslCtx, long sleepTime, boolean h2ContentAggregate, String fixedResponseContent) {
+        this(sslCtx, sleepTime, h2ContentAggregate, 16 * 1024, fixedResponseContent);
     }
 
     private Http2ServerInitializer(SslContext sslCtx, long sleepTime, boolean h2ContentAggregate,
-                                   int maxHttpContentLength) {
+                                   int maxHttpContentLength, String fixedResponseContent) {
         if (maxHttpContentLength < 0) {
             throw new IllegalArgumentException("maxHttpContentLength (expected >= 0): " + maxHttpContentLength);
         }
@@ -73,6 +78,7 @@ public class Http2ServerInitializer extends ChannelInitializer<SocketChannel> {
         this.maxHttpContentLength = maxHttpContentLength;
         this.sleepTime = sleepTime;
         this.h2ContentAggregate = h2ContentAggregate;
+        this.fixedResponseContent = fixedResponseContent;
     }
 
     @Override
@@ -88,7 +94,8 @@ public class Http2ServerInitializer extends ChannelInitializer<SocketChannel> {
      * Configure the pipeline for TLS NPN negotiation to HTTP/2.
      */
     private void configureSsl(SocketChannel ch) {
-        ch.pipeline().addLast(sslCtx.newHandler(ch.alloc()), new Http2OrHttpHandler(sleepTime, h2ContentAggregate));
+        ch.pipeline().addLast(sslCtx.newHandler(ch.alloc()), new Http2OrHttpHandler(sleepTime, h2ContentAggregate,
+                fixedResponseContent));
     }
 
     /**
@@ -107,7 +114,8 @@ public class Http2ServerInitializer extends ChannelInitializer<SocketChannel> {
                 logger.debug("Directly talking: {} (no upgrade was attempted)", msg.protocolVersion());
                 ChannelPipeline pipeline = ctx.pipeline();
                 ChannelHandlerContext thisCtx = pipeline.context(this);
-                pipeline.addAfter(thisCtx.name(), null, new EchoHttpServerHandler(sleepTime, false));
+                pipeline.addAfter(thisCtx.name(), null, new EchoHttpServerHandler(sleepTime, false,
+                        fixedResponseContent));
                 pipeline.replace(this, null, new HttpObjectAggregator(maxHttpContentLength));
                 ctx.fireChannelRead(ReferenceCountUtil.retain(msg));
             }
