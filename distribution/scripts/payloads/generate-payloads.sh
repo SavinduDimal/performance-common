@@ -68,7 +68,7 @@ for s in ${payloads[*]}; do
     if [ "$ai_api_payload" = true ]; then
         echo "Generating ai_${s}B.json file"
         prompt=$(head -c "$s" /dev/zero | tr '\0' 'x')
-        printf '{"model":"mistral-small-latest","temperature":0.7,"max_tokens":300,"stream":false,"messages":[{"role":"user","content":"%s"}]}\n' "$prompt" >"ai_${s}B.json"
+        printf '{"model":"mistral-small-latest","temperature":0.7,"top_p":1,"max_tokens":300,"min_tokens":0,"stream":false,"stop":"string","random_seed":0,"messages":[{"role":"user","content":"%s"}],"response_format":{"type":"text"},"safe_prompt":false}\n' "$prompt" >"ai_${s}B.json"
     else
         echo "Generating ${s}B file"
         java -jar $script_dir/payload-generator-${performance.common.version}.jar --size $s --payload-type ${payload_type}
