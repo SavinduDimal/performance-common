@@ -13,7 +13,7 @@ Our test client is [Apache JMeter](https://jmeter.apache.org/index.html). We tes
 time. We split the test results into warmup and measurement parts and use the measurement part to compute the
 performance metrics.
 
-We run the Back-end performance tests under different numbers of concurrent users, message sizes (payloads) and Back-end service
+We run the Back-end performance tests under different numbers of concurrent users, message sizes (payloads), response sizes and Back-end service
 delays.
 
 The main performance metrics:
@@ -31,6 +31,9 @@ The following are the test parameters.
 | Heap Size | The amount of memory allocated to the application | {{ parameters.heap_sizes|join(', ') }} |
 | Concurrent Users | The number of users accessing the application at the same time. | {{ parameters.concurrent_users|join(', ') }} |
 | Message Size (Bytes) | The request payload size in Bytes. | {{ parameters.message_sizes|join(', ') }} |
+{% if parameters.response_sizes %}
+| Response Size (Bytes) | The back-end response payload size in Bytes. | {{ parameters.response_sizes|join(', ') }} |
+{% endif %}
 | Back-end Delay (ms) | The delay added by the Back-end service. | {{ parameters.backend_sleep_times|join(', ') }} |
 
 The duration of each test is **{{ parameters.test_duration }} seconds**. The warm-up period is **{{ parameters.warmup_time }} seconds**.

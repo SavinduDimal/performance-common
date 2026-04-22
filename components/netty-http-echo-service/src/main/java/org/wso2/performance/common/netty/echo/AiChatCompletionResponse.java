@@ -22,24 +22,20 @@ import java.nio.charset.StandardCharsets;
  */
 final class AiChatCompletionResponse {
 
-    static final String CONTENT = createContent();
-
-    private static final int RESPONSE_SIZE_BYTES = 1024;
-
     private AiChatCompletionResponse() {
     }
 
-    private static String createContent() {
+    static String createContent(int responseSizeBytes) {
         String prefix = "{\"id\":\"cmpl-mock-perf-test-00000000\",\"object\":\"chat.completion\","
                 + "\"created\":1713225600,\"model\":\"mistral-small-latest\",\"choices\":[{\"index\":0,"
                 + "\"message\":{\"role\":\"assistant\",\"content\":\"";
         String suffix = "\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":15,"
                 + "\"completion_tokens\":200,\"total_tokens\":215}}";
-        int paddingLength = RESPONSE_SIZE_BYTES - byteLength(prefix) - byteLength(suffix);
+        int paddingLength = responseSizeBytes - byteLength(prefix) - byteLength(suffix);
         if (paddingLength < 0) {
-            throw new IllegalStateException("AI chat completion response template exceeds 1KB");
+            throw new IllegalStateException("AI chat completion response template exceeds configured size");
         }
-        StringBuilder content = new StringBuilder(RESPONSE_SIZE_BYTES);
+        StringBuilder content = new StringBuilder(responseSizeBytes);
         content.append(prefix);
         for (int i = 0; i < paddingLength; i++) {
             content.append('x');
