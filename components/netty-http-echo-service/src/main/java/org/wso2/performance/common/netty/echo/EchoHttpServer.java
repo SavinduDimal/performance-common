@@ -90,8 +90,12 @@ public final class EchoHttpServer {
     private int sleepTime = 0;
 
     @Parameter(names = "--ai-chat-completion-response",
-            description = "Return a fixed 1KB AI chat completion response instead of echoing the request")
+            description = "Return a fixed AI chat completion response instead of echoing the request")
     private boolean aiChatCompletionResponse = false;
+
+    @Parameter(names = "--ai-chat-completion-response-size",
+            description = "Size in bytes of the fixed AI chat completion response")
+    private int aiChatCompletionResponseSize = 1024;
 
     @Parameter(names = {"-h", "--help"}, description = "Display Help", help = true)
     private boolean help = false;
@@ -123,9 +127,9 @@ public final class EchoHttpServer {
 
     private void startServer() throws SSLException, CertificateException, InterruptedException {
         logger.info("Echo HTTP/{} Server. Port: {}, Boss Threads: {}, Worker Threads: {}, SSL Enabled: {}" +
-                        ", Sleep Time: {}ms, AI Chat Completion Response: {}",
+                        ", Sleep Time: {}ms, AI Chat Completion Response: {}, AI Chat Completion Response Size: {}",
                 http2 ? "2.0" : "1.1", port, bossThreads, workerThreads, ssl, sleepTime,
-                aiChatCompletionResponse);
+                aiChatCompletionResponse, aiChatCompletionResponseSize);
         // Print Max Heap Size
         logger.info("Max Heap Size: {}MB", Runtime.getRuntime().maxMemory() / (1024 * 1024));
         // Print Netty Version
@@ -199,7 +203,7 @@ public final class EchoHttpServer {
     }
 
     private String getFixedResponseContent() {
-        return aiChatCompletionResponse ? AiChatCompletionResponse.CONTENT : null;
+        return aiChatCompletionResponse ? AiChatCompletionResponse.createContent(aiChatCompletionResponseSize) : null;
     }
 
     private SslContextBuilder createSslContextBuilder() throws CertificateException {

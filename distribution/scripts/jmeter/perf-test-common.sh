@@ -68,6 +68,8 @@ declare -a heap_sizes_array
 declare -a concurrent_users_array
 # Message Sizes
 declare -a message_sizes_array
+# Response Sizes
+declare -a response_sizes_array
 # Common backend sleep times (in milliseconds).
 declare -a backend_sleep_times_array
 
@@ -131,7 +133,7 @@ function usage() {
     if function_exists usageCommand; then
         echo "   $(usageCommand)"
     fi
-    echo "   [-d <test_duration>] [-w <warmup_time>]"
+    echo "   [-r <response_sizes>] [-d <test_duration>] [-w <warmup_time>]"
     echo "   [-n <jmeter_servers>] [-j <jmeter_server_heap_size>] [-k <jmeter_client_heap_size>] [-l <netty_service_heap_size>]"
     echo "   [-i <include_scenario_name>] [-e <include_scenario_name>] [-t] [-p <estimated_processing_time_in_between_tests>] [-h]"
     echo ""
@@ -140,6 +142,7 @@ function usage() {
     echo "-b: Message sizes in bytes. You can give multiple options to specify multiple message sizes."
     echo "-q: Message Iterations"
     echo "-s: Backend Sleep Times in milliseconds. You can give multiple options to specify multiple sleep times."
+    echo "-r: Response sizes in bytes. You can give multiple options to specify multiple response sizes."
     if function_exists usageHelp; then
         echo "$(usageHelp)"
     fi
@@ -160,7 +163,7 @@ function usage() {
 
 # Reset getopts
 OPTIND=0
-while getopts "u:b:q:s:m:c:d:w:n:j:k:l:i:e:tp:h" opts; do
+while getopts "u:b:q:s:r:m:c:d:w:n:j:k:l:i:e:tp:h" opts; do
     case $opts in
     u)
         concurrent_users_array+=("${OPTARG}")
@@ -173,6 +176,9 @@ while getopts "u:b:q:s:m:c:d:w:n:j:k:l:i:e:tp:h" opts; do
         ;;
     s)
         backend_sleep_times_array+=("${OPTARG}")
+        ;;
+    r)
+        response_sizes_array+=("${OPTARG}")
         ;;
     m)
         heap_sizes_array+=("${OPTARG}")
@@ -297,6 +303,13 @@ done
 for msize in ${message_sizes_array[@]}; do
     if ! [[ $msize =~ $number_regex ]]; then
         echo "Please specify a valid number for message size."
+        exit 1
+    fi
+done
+
+for rsize in ${response_sizes_array[@]}; do
+    if [[ -n $rsize ]] && ! [[ $rsize =~ $number_regex ]]; then
+        echo "Please specify a valid number for response size."
         exit 1
     fi
 done
@@ -496,6 +509,7 @@ function initialize_test() {
     test_parameters_json+=' | .["test_scenarios"]=$test_scenarios'
     test_parameters_json+=' | .["heap_sizes"]=$heap_sizes | .["concurrent_users"]=$concurrent_users'
     test_parameters_json+=' | .["message_sizes"]=$message_sizes | .["backend_sleep_times"]=$backend_sleep_times'
+    test_parameters_json+=' | .["response_sizes"]=$response_sizes'
     test_parameters_json+=' | .["iteration_elements"]=$iteration_elements'
     jq -n \
         --arg test_duration "$test_duration" \
@@ -508,6 +522,7 @@ function initialize_test() {
         --argjson heap_sizes "$(printf '%s\n' "${heap_sizes_array[@]}" | jq -nR '[inputs]')" \
         --argjson concurrent_users "$(printf '%s\n' "${concurrent_users_array[@]}" | jq -nR '[inputs]')" \
         --argjson message_sizes "$(printf '%s\n' "${message_sizes_array[@]}" | jq -nR '[inputs]')" \
+        --argjson response_sizes "$(printf '%s\n' "${response_sizes_array[@]}" | jq -nR '[inputs]')" \
         --argjson iteration_elements "$(printf '%s\n' "${message_iteratations_array[@]}" | jq -nR '[inputs]')" \
         --argjson backend_sleep_times "$(printf '%s\n' "${backend_sleep_times_array[@]}" | jq -nR '[inputs]')" \
         "$test_parameters_json" >test-metadata.json
@@ -540,6 +555,10 @@ function initialize_test() {
         for msize in ${message_sizes_array[@]}; do
             payload_sizes+=("-s" "$msize")
         done
+
+        if [ ${#response_sizes_array[@]} -eq 0 ]; then
+            response_sizes_array=("")
+        fi
 
         if [[ $jmeter_servers -gt 1 ]]; then
             for jmeter_ssh_host in ${jmeter_ssh_hosts[@]}; do
@@ -594,7 +613,8 @@ function test_scenarios() {
             fi
             for users in ${concurrent_users_array[@]}; do
                 for msize in ${message_sizes_array[@]}; do
-                    for sleep_time in ${sleep_times_array[@]}; do
+                    for rsize in ${response_sizes_array[@]}; do
+                        for sleep_time in ${sleep_times_array[@]}; do
                         if [ "$estimate" = true ]; then
                             record_scenario_duration $scenario_name $(($test_duration + $estimated_processing_time_in_between_tests))
                             continue
@@ -606,10 +626,18 @@ function test_scenarios() {
                         test_counter=$((test_counter + 1))
                         local scenario_desc="Test No: ${test_counter}, Scenario Name: ${scenario_name}, Duration: $test_duration"
                         scenario_desc+=", Concurrent Users ${users}, Msg Size: ${msize}, Sleep Time: ${sleep_time}"
+                        if [[ -n $rsize ]]; then
+                            scenario_desc+=", Response Size: ${rsize}"
+                        fi
                         echo -n "# Starting the performance test."
                         echo " $scenario_desc"
 
-                        report_location=$PWD/results/${scenario_name}/${heap}_heap/${users}_users/${msize}B/${sleep_time}ms_sleep
+                        local report_location_suffix="${sleep_time}ms_sleep"
+                        if [[ -n $rsize ]]; then
+                            report_location_suffix="${rsize}B_response/${report_location_suffix}"
+                        fi
+
+                        report_location=$PWD/results/${scenario_name}/${heap}_heap/${users}_users/${msize}B/${report_location_suffix}
 
                         echo "Report location is ${report_location}"
                         mkdir -p $report_location
@@ -717,6 +745,7 @@ function test_scenarios() {
                         echo " $scenario_desc"
                         echo -e "Test execution time: $(format_time $current_execution_duration)\n"
                         record_scenario_duration $scenario_name $current_execution_duration
+                    done
                     done
                 done
             done

@@ -836,17 +836,23 @@ echo "Combining system information in following files: ${system_information_file
 jq -s . "${system_information_files[@]}" >all-system-info.json
 # Copy metadata before creating CSV
 cp cf-test-metadata.json test-metadata.json results
+declare -a create_csv_args
+if function_exists get_create_csv_args; then
+    while IFS= read -r arg; do
+        create_csv_args+=("$arg")
+    done < <(get_create_csv_args)
+fi
 echo "Creating summary.csv..."
 # Create warmup summary CSV
-$script_dir/../jmeter/create-summary-csv.sh ${create_csv_opts} -d results -n "${application_name}" -p "${metrics_file_prefix}" -j $max_jmeter_servers -g "${gcviewer_jar_path}" -i -w -o summary-warmup.csv
+$script_dir/../jmeter/create-summary-csv.sh "${create_csv_args[@]}" ${create_csv_opts} -d results -n "${application_name}" -p "${metrics_file_prefix}" -j $max_jmeter_servers -g "${gcviewer_jar_path}" -i -w -o summary-warmup.csv
 # Create measurement summary CSV
-$script_dir/../jmeter/create-summary-csv.sh ${create_csv_opts} -d results -n "${application_name}" -p "${metrics_file_prefix}" -j $max_jmeter_servers -g "${gcviewer_jar_path}" -i -o summary.csv
+$script_dir/../jmeter/create-summary-csv.sh "${create_csv_args[@]}" ${create_csv_opts} -d results -n "${application_name}" -p "${metrics_file_prefix}" -j $max_jmeter_servers -g "${gcviewer_jar_path}" -i -o summary.csv
 # Zip results
 zip -9qmr results-all.zip results/
 
 # Use following to get all column names:
 echo "Available column names:"
-while read -r line; do echo "\"$line\""; done < <($script_dir/../jmeter/create-summary-csv.sh ${create_csv_opts} -n "${application_name}" -j $max_jmeter_servers -i -x)
+while read -r line; do echo "\"$line\""; done < <($script_dir/../jmeter/create-summary-csv.sh "${create_csv_args[@]}" ${create_csv_opts} -n "${application_name}" -j $max_jmeter_servers -i -x)
 echo -ne "\n\n"
 
 declare -a column_names
