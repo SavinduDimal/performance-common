@@ -642,6 +642,10 @@ function test_scenarios() {
                         echo "Report location is ${report_location}"
                         mkdir -p $report_location
 
+                        declare -ag jmeter_params=("users=$users_per_jmeter" "duration=$test_duration")
+
+                        before_execute_test_scenario
+
                         if [[ $sleep_time -ge 0 ]]; then
                             local backend_flags="${scenario[backend_flags]}"
                             echo "Starting Backend Service. Delay: $sleep_time, Additional Flags: ${backend_flags:-N/A}"
@@ -649,10 +653,6 @@ function test_scenarios() {
                                 -- ${backend_flags} --delay $sleep_time"
                             collect_server_metrics netty $backend_ssh_host netty
                         fi
-
-                        declare -ag jmeter_params=("users=$users_per_jmeter" "duration=$test_duration")
-
-                        before_execute_test_scenario
 
                         if [[ $jmeter_servers -gt 1 ]]; then
                             echo "Starting Remote JMeter servers"
