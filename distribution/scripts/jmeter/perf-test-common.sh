@@ -62,6 +62,8 @@
 script_dir=$(dirname "$0")
 . $script_dir/../common/common.sh
 
+echo "#### Current git change version: performance-common: v1 ####"
+
 # Application heap Sizes
 declare -a heap_sizes_array
 # Concurrent users (will be divided among JMeter servers)
