@@ -347,12 +347,16 @@ if [[ -f $filename ]]; then
 fi
 
 declare -A scenario_display_names
+declare -a scenario_names
 
 # Check test-metadata.json file
 if [[ -f ${results_dir}/test-metadata.json ]]; then
     while IFS='=' read -r key value; do
         scenario_display_names["$key"]="$value"
     done < <(jq -r '.test_scenarios[] | "\(.name)=\(.display_name)"' ${results_dir}/test-metadata.json)
+    while IFS= read -r scenario_name; do
+        scenario_names+=("$scenario_name")
+    done < <(jq -r '.test_scenarios[] | .name' ${results_dir}/test-metadata.json)
 else
     echo "WARNING: Could not find test metadata."
 fi
@@ -511,7 +515,37 @@ if [[ $use_warmup == true ]]; then
     data_file="results-warmup-summary.json"
 fi
 
-for summary_json in $(find ${results_dir} -type f -name ${data_file} | sort -V); do
+declare -a summary_json_files
+while IFS= read -r summary_json; do
+    summary_json_files+=("$summary_json")
+done < <(find ${results_dir} -type f -name ${data_file} | sort -V)
+
+declare -a ordered_summary_json_files
+if [[ ${#scenario_names[@]} -gt 0 ]]; then
+    for scenario_name in "${scenario_names[@]}"; do
+        for summary_json in "${summary_json_files[@]}"; do
+            if [[ $summary_json == */${scenario_name}/* ]]; then
+                ordered_summary_json_files+=("$summary_json")
+            fi
+        done
+    done
+    for summary_json in "${summary_json_files[@]}"; do
+        matched=false
+        for ordered_summary_json in "${ordered_summary_json_files[@]}"; do
+            if [[ $summary_json == "$ordered_summary_json" ]]; then
+                matched=true
+                break
+            fi
+        done
+        if [[ $matched == false ]]; then
+            ordered_summary_json_files+=("$summary_json")
+        fi
+    done
+else
+    ordered_summary_json_files=("${summary_json_files[@]}")
+fi
+
+for summary_json in "${ordered_summary_json_files[@]}"; do
     echo "Reading results from ${summary_json}..."
     current_dir="$(dirname ${summary_json})"
     echo "Current directory: $current_dir"
