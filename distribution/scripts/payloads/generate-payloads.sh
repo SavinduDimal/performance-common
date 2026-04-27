@@ -21,6 +21,18 @@ script_dir=$(dirname "$0")
 payload_type=""
 declare -a payloads
 ai_api_payload=false
+ai_text_pattern="the quick brown fox jumps over the lazy dog "
+
+function generate_ai_text() {
+    local target_size="$1"
+    local text=""
+
+    while [[ ${#text} -lt $target_size ]]; do
+        text+="$ai_text_pattern"
+    done
+
+    echo "${text:0:$target_size}"
+}
 
 function usage() {
     echo ""
@@ -67,7 +79,10 @@ fi
 for s in ${payloads[*]}; do
     if [ "$ai_api_payload" = true ]; then
         echo "Generating ai_${s}B.json file"
-        prompt=$(head -c "$s" /dev/zero | tr '\0' 'x')
+        json_prefix='{"model":"mistral-small-latest","temperature":0.7,"top_p":1,"max_tokens":300,"min_tokens":0,"stream":false,"stop":"string","random_seed":0,"messages":[{"role":"user","content":"'
+        json_suffix='"}],"response_format":{"type":"text"},"safe_prompt":false}'
+        prompt_size=$(("$s" - ${#json_prefix} - ${#json_suffix} - 1))
+        prompt=$(generate_ai_text "$prompt_size")
         printf '{"model":"mistral-small-latest","temperature":0.7,"top_p":1,"max_tokens":300,"min_tokens":0,"stream":false,"stop":"string","random_seed":0,"messages":[{"role":"user","content":"%s"}],"response_format":{"type":"text"},"safe_prompt":false}\n' "$prompt" >"ai_${s}B.json"
     else
         echo "Generating ${s}B file"

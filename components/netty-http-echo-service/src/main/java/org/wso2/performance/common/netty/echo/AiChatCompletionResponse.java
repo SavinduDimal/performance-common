@@ -22,6 +22,8 @@ import java.nio.charset.StandardCharsets;
  */
 final class AiChatCompletionResponse {
 
+    private static final String TEXT_PATTERN = "the quick brown fox jumps over the lazy dog ";
+
     private AiChatCompletionResponse() {
     }
 
@@ -37,11 +39,17 @@ final class AiChatCompletionResponse {
         }
         StringBuilder content = new StringBuilder(responseSizeBytes);
         content.append(prefix);
-        for (int i = 0; i < paddingLength; i++) {
-            content.append('x');
-        }
+        appendText(content, paddingLength);
         content.append(suffix);
         return content.toString();
+    }
+
+    private static void appendText(StringBuilder content, int length) {
+        while (length > 0) {
+            int chunkLength = Math.min(length, TEXT_PATTERN.length());
+            content.append(TEXT_PATTERN, 0, chunkLength);
+            length -= chunkLength;
+        }
     }
 
     private static int byteLength(String value) {
