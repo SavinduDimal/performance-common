@@ -24,6 +24,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import humanize
 from jinja2 import Environment, FileSystemLoader
 
@@ -59,6 +60,18 @@ def pluralize(number, singular='', plural='s'):
         return plural
 
 
+def numeric_key(value):
+    if value is None or value == 'N/A':
+        return float('inf')
+    try:
+        return float(value)
+    except ValueError:
+        match = re.match(r'^(\d+(?:\.\d+)?)([A-Za-z]+)$', value)
+        if match:
+            return (float(match.group(1)), match.group(2))
+        return value
+
+
 def main():
     parser = argparse.ArgumentParser(description='Create summary report')
     parser.add_argument("--json-parameters", dest="parameters", action=StoreJsonParameters,
@@ -76,6 +89,10 @@ def main():
 
     column_names_set = set(args.column_names)
     rows = []
+    test_scenarios = context.get('parameters', {}).get('test_scenarios', [])
+    scenario_order = {
+        scenario.get('display_name'): index for index, scenario in enumerate(test_scenarios)
+    }
 
     with open('summary.csv') as csv_file:
         reader = csv.DictReader(csv_file)
@@ -84,6 +101,24 @@ def main():
                 (name, value) for name, value in row.items() if name in column_names_set
             )
             rows.append(filtered_row)
+        sort_columns = [
+            'Heap Size',
+            'Concurrent Users',
+            'Message Size (Bytes)',
+            'Response Size (Bytes)',
+            'Back-end Service Delay (ms)'
+        ]
+        if all(column in column_names_set for column in sort_columns) and 'Scenario Name' in column_names_set:
+            rows.sort(
+                key=lambda row: (
+                    numeric_key(row.get('Heap Size')),
+                    numeric_key(row.get('Concurrent Users')),
+                    numeric_key(row.get('Message Size (Bytes)')),
+                    numeric_key(row.get('Response Size (Bytes)')),
+                    numeric_key(row.get('Back-end Service Delay (ms)')),
+                    scenario_order.get(row.get('Scenario Name'), len(scenario_order)),
+                )
+            )
         context['rows'] = rows
 
     TEMPLATE_ENVIRONMENT.filters['pluralize'] = pluralize

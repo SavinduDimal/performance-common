@@ -62,7 +62,7 @@
 script_dir=$(dirname "$0")
 . $script_dir/../common/common.sh
 
-echo "#### Current git change version: performance-common: v3 ####"
+echo "#### Current git change version: performance-common: v4 ####"
 
 # Application heap Sizes
 declare -a heap_sizes_array
